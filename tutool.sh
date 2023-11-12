@@ -1,6 +1,6 @@
 #!/bin/bash
-ver="1.2.10"
-changeLog="添加了回程检测脚本，优化了部分脚本，修复了一些bug"
+ver="1.0.0"
+changeLog=""
 arch=`uname -m`
 virt=`systemd-detect-virt`
 kernelVer=`uname -r`
@@ -33,7 +33,7 @@ if [[ -f /etc/redhat-release ]]; then
     release="Centos"
 else 
     red "不支持你当前系统，请使用Ubuntu,Debian,Centos系统"
-    rm -f ednovastool.sh
+    rm -f tutool.sh
     exit 1
 fi
 
@@ -82,7 +82,7 @@ function GetIpAddress(){
 function aliasInstall() {
 
 	if [[ -f "$HOME/tutool.sh" ]] && [[ -d "/etc/tutool" ]] && grep <"$HOME/tutool.sh" -q "作者:EdNovas"; then
-		mv "$HOME/ednovastool.sh" /etc/ednovastool/ednovastool.sh
+		mv "$HOME/tutool.sh" /etc/tutool/tutool.sh
 		local installedN=
 		if [[ -d "/usr/bin/" ]]; then
 			if [[ ! -f "/usr/bin/tutool" ]]; then
@@ -91,19 +91,65 @@ function aliasInstall() {
 				installedN=true
 			fi
 
-			rm -rf "$HOME/ednovastool.sh"
+			rm -rf "$HOME/tutool.sh"
 		elif [[ -d "/usr/sbin" ]]; then
-			if [[ ! -f "/usr/sbin/ednovas" ]]; then
-				ln -s /etc/ednovastool/ednovastool.sh /usr/sbin/ednovas
-				chmod 700 /usr/sbin/ednovas
+			if [[ ! -f "/usr/sbin/tutool" ]]; then
+				ln -s /etc/tutool/tutool.sh /usr/sbin/tutool
+				chmod 700 /usr/sbin/tutool
 				installedN=true
 			fi
-			rm -rf "$HOME/ednovastool.sh"
+			rm -rf "$HOME/tutool.sh"
 		fi
 		if [[ "${installedN}" == "true" ]]; then
-			echoContent green "快捷方式创建成功，可执行[ednovas]重新打开脚本"
+			echoContent green "快捷方式创建成功，可执行[tutool]重新打开脚本"
 		fi
 	fi
 }
 # ==============Install=============
+
+
+# ==============updateScript=============
+function updateScript(){
+    wget -P /root -N https://raw.githubusercontent.com/HuTuTuOnO/TuTool/main/tutool.sh && chmod +x tutool.sh && ./tutool.sh
+}
+# ==============updateScript=============
+
+
+# startMenu
+function startmenu(){
+    clear
+    green "============================="
+    echo "                             "
+    green "            TuTool          "
+    green "      https://tutool.xyz    "
+    echo "                             "
+    green "============================="
+    echo "                        "
+    yellow "当前版本(Version): $ver"
+    yellow "更新(Updates): $changeLog"
+    echo "                        "
+    yellow "======检测到VPS信息如下======"
+    green "ip地址：$getIpAddress"
+	green "主机名：$hostnameVariable"
+    green "处理器架构：$arch"
+    green "虚拟化架构：$virt"
+    green "操作系统：$release"
+    green "内核版本：$kernelVer"
+    echo "                        "
+    echo "3. 科学上网"
+    echo "9. 更新脚本"
+    echo "0. 退出脚本"
+    echo "                        "
+    echo "快捷方式创建成功，可执行[tutool]快捷重新打开脚本"
+    read -p "请输入选项:" menuNumberInput
+    case "$menuNumberInput" in
+        3 ) proxyRelated ;;
+        9 ) updateScript ;;
+        0 ) exit 0 ;;
+    esac
+}
+
 GetIpAddress
+mkdir -p /etc/tutool
+aliasInstall
+startMenu
