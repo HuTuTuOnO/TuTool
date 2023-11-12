@@ -69,3 +69,41 @@ if ! type sudo >/dev/null 2>&1; then
 else
     green "sudo已安装"
 fi
+
+# ==============Func=============
+
+function GetIpAddress(){
+	IpAddress=$(curl ip.p3terx.com)
+}
+
+# ==============Func=============
+
+# ==============Install=============
+function aliasInstall() {
+
+	if [[ -f "$HOME/tutool.sh" ]] && [[ -d "/etc/tutool" ]] && grep <"$HOME/tutool.sh" -q "作者:EdNovas"; then
+		mv "$HOME/ednovastool.sh" /etc/ednovastool/ednovastool.sh
+		local installedN=
+		if [[ -d "/usr/bin/" ]]; then
+			if [[ ! -f "/usr/bin/tutool" ]]; then
+				ln -s /etc/tutool/tutool.sh /usr/bin/tutool
+				chmod 700 /usr/bin/tutool
+				installedN=true
+			fi
+
+			rm -rf "$HOME/ednovastool.sh"
+		elif [[ -d "/usr/sbin" ]]; then
+			if [[ ! -f "/usr/sbin/ednovas" ]]; then
+				ln -s /etc/ednovastool/ednovastool.sh /usr/sbin/ednovas
+				chmod 700 /usr/sbin/ednovas
+				installedN=true
+			fi
+			rm -rf "$HOME/ednovastool.sh"
+		fi
+		if [[ "${installedN}" == "true" ]]; then
+			echoContent green "快捷方式创建成功，可执行[ednovas]重新打开脚本"
+		fi
+	fi
+}
+# ==============Install=============
+GetIpAddress
