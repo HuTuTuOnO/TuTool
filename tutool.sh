@@ -105,17 +105,64 @@ function aliasInstall() {
 		fi
 	fi
 }
-# ==============Install=============
 
+# ==============3.proxyRelated=============
+
+function xrayronekey(){
+    bash <(curl -Ls https://raw.githubusercontent.com/XrayR-project/XrayR-release/master/install.sh)
+    cd /etc/XrayR
+}
+
+function rulelist(){
+    cd /etc/XrayR
+    wget https://raw.githubusercontent.com/wdm1732418365/rulelist/main/rulelist
+    sudo sed -i 's/RuleListPath:/RuleListPath: \/etc\/XrayR\/rulelist/g' /etc/XrayR/config.yml
+    xrayr restart
+}
 
 # ==============updateScript=============
+
 function updateScript(){
     wget -P /root -N https://raw.githubusercontent.com/HuTuTuOnO/TuTool/main/tutool.sh && chmod +x tutool.sh && ./tutool.sh
 }
-# ==============updateScript=============
 
+# ==============End=============
 
-# startMenu
+# 3.proxyRelated
+function proxyRelated(){
+    clear
+    green "============================="
+    echo "                             "
+    green "            TuTool          "
+    green "      https://tutool.xyz    "
+    echo "                             "
+    green "============================="
+    echo "                        "
+    yellow "当前版本(Version): $ver"
+    yellow "更新(Updates): $changeLog"
+    echo "                        "
+    yellow "======检测到VPS信息如下======"
+    green "ip地址：$IpAddress"
+	green "主机名：$hostnameVariable"
+    green "处理器架构：$arch"
+    green "虚拟化架构：$virt"
+    green "操作系统：$release"
+    green "内核版本：$kernelVer"
+    echo "                        "
+    echo "1. XrayR 后端安装"
+    echo "2. XrayR添加本地审计规则"
+    echo "                        "
+    echo "0. 返回上一级"
+    echo "                        "
+    read -p "请输入选项:" partThreeInput
+    case "$partThreeInput" in
+        1 ) xrayronekey ;;
+        2 ) rulelist ;;
+        0 ) start_menu ;;
+    esac
+}
+
+# 0.startMenu
 function startMenu(){
     clear
     green "============================="
@@ -129,7 +176,7 @@ function startMenu(){
     yellow "更新(Updates): $changeLog"
     echo "                        "
     yellow "======检测到VPS信息如下======"
-    green "ip地址：$getIpAddress"
+    green "ip地址：$IpAddress"
 	green "主机名：$hostnameVariable"
     green "处理器架构：$arch"
     green "虚拟化架构：$virt"
