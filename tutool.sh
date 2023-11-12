@@ -81,7 +81,7 @@ function GetIpAddress(){
 # ==============Install=============
 function aliasInstall() {
 
-	if [[ -f "$HOME/tutool.sh" ]] && [[ -d "/etc/tutool" ]] && grep <"$HOME/tutool.sh" -q "作者:EdNovas"; then
+	if [[ -f "$HOME/tutool.sh" ]] && [[ -d "/etc/tutool" ]] && grep <"$HOME/tutool.sh" -q "作者:HuTuTu"; then
 		mv "$HOME/tutool.sh" /etc/tutool/tutool.sh
 		local installedN=
 		if [[ -d "/usr/bin/" ]]; then
@@ -116,7 +116,7 @@ function updateScript(){
 
 
 # startMenu
-function startmenu(){
+function startMenu(){
     clear
     green "============================="
     echo "                             "
