@@ -2,45 +2,73 @@
 # v2ray一键安装脚本
 # Author: HU<https://hu.tu/>
 
-
 RED="\033[31m"      # Error message
 GREEN="\033[32m"    # Success message
 YELLOW="\033[33m"   # Warning message
 BLUE="\033[36m"     # Info message
 PLAIN='\033[0m'
 
+colorEcho() {
+    echo -e "${1}${@:2}${PLAIN}"
+}
+
 # 以下网站是随机从Google上找到的无广告小说网站，不喜欢请改成其他网址，以http或https开头
 # 搭建好后无法打开伪装域名，可能是反代小说网站挂了，请在网站留言，或者Github发issue，以便替换新的网站
 SITES=(
-http://www.zhuizishu.com/
-http://xs.56dyc.com/
-http://www.ddxsku.com/
-http://www.biqu6.com/
-https://www.wenshulou.cc/
-http://www.55shuba.com/
-http://www.39shubao.com/
-https://www.23xsw.cc/
-https://www.huanbige.com/
-https://www.jueshitangmen.info/
-https://www.zhetian.org/
-http://www.bequgexs.com/
-http://www.tjwl.com/
+	https://www.ruiwen.com/
+	https://www.ihuaben.com/
+	http://www.fbook.net/
+	https://www.tadu.com/
+	http://www.quyuewang.cn/
+	https://www.hongshu.com/
+	http://www.zongheng.com/
+	http://www.cjzww.com/
+	http://www.tiandizw.com/
+	https://b.faloo.com/
+	https://www.17k.com/
+	https://www.yousuu.com/
+	http://www.qwsy.com/
+	http://www.inbook.net/
+	https://www.zzwenxue.com/
 )
 
 CONFIG_FILE="/etc/v2ray/config.json"
 SERVICE_FILE="/etc/systemd/system/v2ray.service"
 OS=`hostnamectl | grep -i system | cut -d: -f2`
 
-V6_PROXY=""
-IP=`curl -sL -4 ip.sb`
-if [[ "$?" != "0" ]]; then
-    IP=`curl -sL -6 ip.sb`
-    V6_PROXY="https://gh.hijk.art/"
+# 检查服务器网络环境
+
+checkv4v6(){
+    v6=$(curl -s6m8 api64.ipify.org -k)
+    v4=$(curl -s4m8 api64.ipify.org -k)
+}
+
+colorEcho $YELLOW "正在检查VPS的IP配置环境, 请稍等..." && sleep 1
+WgcfIPv4Status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
+WgcfIPv6Status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
+if [[ $WgcfIPv4Status =~ "on"|"plus" ]] || [[ $WgcfIPv6Status =~ "on"|"plus" ]]; then
+    wg-quick down wgcf >/dev/null 2>&1
+    systemctl stop warp-go >/dev/null 2>&1
+    checkv4v6
+    wg-quick up wgcf >/dev/null 2>&1
+    systemctl start warp-go >/dev/null 2>&1
+else
+    checkv4v6
+    if [[ -z $v4 && -n $v6 ]]; then
+        colorEcho $GREEN "检测到为纯IPv6 VPS, 已自动添加DNS64解析服务器"
+        echo -e "nameserver 2a01:4f8:c2c:123f::1" > /etc/resolv.conf
+		IP=$v6
+		ipv6Status="on"
+		else
+		IP=$v4
+    fi
 fi
+sleep 3
 
 BT="false"
 NGINX_CONF_PATH="/etc/nginx/conf.d/"
 res=`which bt 2>/dev/null`
+
 if [[ "$res" != "" ]]; then
     BT="true"
     NGINX_CONF_PATH="/www/server/panel/vhost/nginx/"
@@ -82,10 +110,6 @@ checkSystem() {
         colorEcho $RED " 系统版本过低，请升级到最新版本"
         exit 1
     fi
-}
-
-colorEcho() {
-    echo -e "${1}${@:2}${PLAIN}"
 }
 
 configNeedNginx() {
@@ -171,11 +195,19 @@ normalizeVersion() {
 
 # 1: new V2Ray. 0: no. 1: yes. 2: not installed. 3: check failed.
 getVersion() {
-    VER="$(/usr/bin/v2ray/v2ray -version 2>/dev/null)"
+    if /usr/bin/v2ray/v2ray -version >/dev/null 2>&1;then
+	VER="$(/usr/bin/v2ray/v2ray -version | awk 'NR==1 {print $2}')"
+    else
+	VER="$(/usr/bin/v2ray/v2ray version | awk 'NR==1 {print $2}')"
+    fi
     RETVAL=$?
     CUR_VER="$(normalizeVersion "$(echo "$VER" | head -n 1 | cut -d " " -f2)")"
-    TAG_URL="${V6_PROXY}https://api.github.com/repos/v2fly/v2ray-core/releases/latest"
+    TAG_URL="https://api.github.com/repos/v2fly/v2ray-core/releases/latest"
     NEW_VER="$(normalizeVersion "$(curl -s "${TAG_URL}" --connect-timeout 10| tr ',' '\n' | grep 'tag_name' | cut -d\" -f4)")"
+    # 解决通过Github API获取v2ray最新版本失败问题
+    if [[ $NEW_VER == "" ]]; then
+        NEW_VER=v5.1.0
+    fi	
     if [[ "$XTLS" = "true" ]]; then
         NEW_VER=v4.32.1
     fi
@@ -269,11 +301,14 @@ getData() {
             CERT_FILE="/etc/v2ray/${DOMAIN}.pem"
             KEY_FILE="/etc/v2ray/${DOMAIN}.key"
         else
-            resolve=$(curl -sm8 ipget.net/?ip=${DOMAIN})
-            res=`echo -n ${resolve} | grep ${IP}`
-            if [[ -z "${res}" ]]; then
-                colorEcho ${BLUE}  "${DOMAIN} 解析结果：${resolve}"
-                colorEcho ${RED}  " 域名未解析到当前服务器IP(${IP})!"
+            resolve=`curl -sm8 ipget.net/?ip=${DOMAIN}`
+            if [ "$resolve" != "$v4" ] && [ "$resolve" != "$v6" ]; then
+		if echo $resolve | grep -q html; then
+			colorEcho ${BLUE}  " 域名解析失败，请添加域名解析记录或等待DNS同步，稍后再试。"
+		else
+			colorEcho ${BLUE}  " ${DOMAIN} 解析结果：${resolve}"
+		fi
+                colorEcho ${RED}  " 域名未解析到当前服务器IP("${BLUE}"ipv4:"${RED}"${v4} / "${BLUE}"ipv6:"${RED}"${v6} )!"
                 exit 1
             fi
         fi
@@ -389,7 +424,58 @@ getData() {
     fi
 
     if [[ "$TLS" = "true" || "$XTLS" = "true" ]]; then
-        PROXY_URL="https://86817.com/"
+        echo ""
+        colorEcho $BLUE " 请选择伪装站类型:"
+        echo "   1) 静态网站(位于/usr/share/nginx/html)"
+        echo "   2) 小说站(随机选择)"
+        echo "   3) 美女站(http://www.kimiss.com)"
+        echo "   4) 高清壁纸站(https://www.wallpaperstock.net)"
+        echo "   5) 自定义反代站点(需以http或者https开头)"
+        read -p "  请选择伪装网站类型[默认:高清壁纸站]" answer
+        if [[ -z "$answer" ]]; then
+            PROXY_URL="https://www.wallpaperstock.net"
+        else
+            case $answer in
+            1)
+                PROXY_URL=""
+                ;;
+            2)
+                len=${#SITES[@]}
+                ((len--))
+                while true
+                do
+                    index=`shuf -i0-${len} -n1`
+                    PROXY_URL=${SITES[$index]}
+                    host=`echo ${PROXY_URL} | cut -d/ -f3`
+                    ip=`curl -sm8 ipget.net/?ip=${host}`
+                    res=`echo -n ${ip} | grep ${host}`
+                    if [[ "${res}" = "" ]]; then
+                        echo "$ip $host" >> /etc/hosts
+                        break
+                    fi
+                done
+                ;;
+            3)
+                PROXY_URL="http://www.kimiss.com"
+                ;;
+            4)
+                PROXY_URL="https://www.wallpaperstock.net"
+                ;;
+            5)
+                read -p " 请输入反代站点(以http或者https开头)：" PROXY_URL
+                if [[ -z "$PROXY_URL" ]]; then
+                    colorEcho $RED " 请输入反代网站！"
+                    exit 1
+                elif [[ "${PROXY_URL:0:4}" != "http" ]]; then
+                    colorEcho $RED " 反代网站必须以http或https开头！"
+                    exit 1
+                fi
+                ;;
+            *)
+                colorEcho $RED " 请输入正确的选项！"
+                exit 1
+            esac
+        fi
         REMOTE_HOST=`echo ${PROXY_URL} | cut -d/ -f3`
         colorEcho $BLUE " 伪装网站：$PROXY_URL"
 
@@ -433,7 +519,7 @@ module_hotfixes=true' > /etc/yum.repos.d/nginx.repo
         fi
         $CMD_INSTALL nginx
         if [[ "$?" != "0" ]]; then
-            colorEcho $RED " Nginx安装失败，请到 https://hu.tu/ 反馈"
+            colorEcho $RED " Nginx安装失败，请到  https://www.hu.tu 反馈"
             exit 1
         fi
         systemctl enable nginx
@@ -488,27 +574,37 @@ getCert() {
             systemctl start cron
             systemctl enable cron
         fi
-        curl -sL https://get.acme.sh | sh -s email=hijk.pw@protonmail.ch
+        curl -sL https://get.acme.sh | sh -s email=webmaster@hu.tu
         source ~/.bashrc
         ~/.acme.sh/acme.sh  --upgrade  --auto-upgrade
         ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-        if [[ "$BT" = "false" ]]; then
-            ~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "systemctl stop nginx" --post-hook "systemctl restart nginx"  --standalone
-        else
-            ~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "nginx -s stop || { echo -n ''; }" --post-hook "nginx -c /www/server/nginx/conf/nginx.conf || { echo -n ''; }"  --standalone
-        fi
+
+		if [[ "$ipv6Status" = "on" ]]; then
+			if [[ "$BT" = "false" ]]; then
+				~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "systemctl stop nginx" --post-hook "systemctl restart nginx"  --standalone --listen-v6 --insecure
+			else
+				~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "nginx -s stop || { echo -n ''; }" --post-hook "nginx -c /www/server/nginx/conf/nginx.conf || { echo -n ''; }"  --standalone --listen-v6 --insecure
+			fi
+		else
+			if [[ "$BT" = "false" ]]; then
+				~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "systemctl stop nginx" --post-hook "systemctl restart nginx"  --standalone --insecure
+			else
+				~/.acme.sh/acme.sh   --issue -d $DOMAIN --keylength ec-256 --pre-hook "nginx -s stop || { echo -n ''; }" --post-hook "nginx -c /www/server/nginx/conf/nginx.conf || { echo -n ''; }"  --standalone --insecure
+			fi
+		fi		
+		
         [[ -f ~/.acme.sh/${DOMAIN}_ecc/ca.cer ]] || {
-            colorEcho $RED " 获取证书失败，请复制上面的红色文字到 https://hu.tu/ 反馈"
+            colorEcho $RED " 获取证书失败，请复制上面的红色文字到  https://www.hu.tu 反馈"
             exit 1
         }
-        CERT_FILE="/etc/v2ray/${DOMAIN}.pem"
         KEY_FILE="/etc/v2ray/${DOMAIN}.key"
+		CERT_FILE="/etc/v2ray/${DOMAIN}.pem"
         ~/.acme.sh/acme.sh  --install-cert -d $DOMAIN --ecc \
             --key-file       $KEY_FILE  \
             --fullchain-file $CERT_FILE \
             --reloadcmd     "service nginx force-reload"
         [[ -f $CERT_FILE && -f $KEY_FILE ]] || {
-            colorEcho $RED " 获取证书失败，请到 https://hu.tu/ 反馈"
+            colorEcho $RED " 获取证书失败，请到  https://www.hu.tu 反馈"
             exit 1
         }
     else
@@ -606,12 +702,14 @@ server {
     charset utf-8;
 
     # ssl配置
-    ssl_protocols TLSv1.1 TLSv1.2;
-    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE:ECDH:AES:HIGH:!NULL:!aNULL:!MD5:!ADH:!RC4;
-    ssl_ecdh_curve secp384r1;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-128-CCM-8-SHA256:TLS13-AES-128-CCM-SHA256:EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
     ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
+    ssl_session_cache builtin:1000 shared:SSL:10m;
     ssl_session_timeout 10m;
+    ssl_buffer_size 1400;
+    ssl_stapling on;
+    ssl_stapling_verify on;
     ssl_session_tickets off;
     ssl_certificate $CERT_FILE;
     ssl_certificate_key $KEY_FILE;
@@ -745,7 +843,6 @@ installBBR() {
 
     colorEcho $BLUE " 安装BBR模块..."
     if [[ "$PMT" = "yum" ]]; then
-        if [[ "$V6_PROXY" = "" ]]; then
             rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
             rpm -Uvh http://www.elrepo.org/elrepo-release-7.0-4.el7.elrepo.noarch.rpm
             $CMD_INSTALL --enablerepo=elrepo-kernel kernel-ml
@@ -753,7 +850,6 @@ installBBR() {
             grub2-set-default 0
             echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
             INSTALL_BBR=true
-        fi
     else
         $CMD_INSTALL --install-recommends linux-generic-hwe-16.04
         grub-set-default 0
@@ -765,27 +861,35 @@ installBBR() {
 installV2ray() {
     rm -rf /tmp/v2ray
     mkdir -p /tmp/v2ray
-    NEW_VER=v4.33.0
-    DOWNLOAD_LINK="${V6_PROXY}https://github.com/v2fly/v2ray-core/releases/download/${NEW_VER}/v2ray-linux-$(archAffix).zip"
+    DOWNLOAD_LINK="https://github.com/v2fly/v2ray-core/releases/download/${NEW_VER}/v2ray-linux-$(archAffix).zip"
     colorEcho $BLUE " 下载V2Ray: ${DOWNLOAD_LINK}"
     curl -L -H "Cache-Control: no-cache" -o /tmp/v2ray/v2ray.zip ${DOWNLOAD_LINK}
     if [ $? != 0 ];then
         colorEcho $RED " 下载V2ray文件失败，请检查服务器网络设置"
         exit 1
     fi
+    v2ray_start_config="run -c"
     mkdir -p '/etc/v2ray' '/var/log/v2ray' && \
     unzip /tmp/v2ray/v2ray.zip -d /tmp/v2ray
     mkdir -p /usr/bin/v2ray
-    cp /tmp/v2ray/v2ctl /usr/bin/v2ray/; cp /tmp/v2ray/v2ray /usr/bin/v2ray/; cp /tmp/v2ray/geo* /usr/bin/v2ray/;
-    chmod +x '/usr/bin/v2ray/v2ray' '/usr/bin/v2ray/v2ctl' || {
+    cp /tmp/v2ray/v2ray /usr/bin/v2ray/; cp /tmp/v2ray/geo* /usr/bin/v2ray/;
+    chmod +x '/usr/bin/v2ray/v2ray' || {
+    colorEcho $RED " V2ray安装失败"
+    exit 1
+    }
+    if [[ "$NEW_VER" = "v4.32.1" ]]; then
+	cp /tmp/v2ray/v2ctl /usr/bin/v2ray/;
+	chmod +x '/usr/bin/v2ray/v2ctl' || {
         colorEcho $RED " V2ray安装失败"
         exit 1
-    }
+	}
+	v2ray_start_config="-config"
+    fi
 
     cat >$SERVICE_FILE<<-EOF
 [Unit]
 Description=V2ray Service
-Documentation=https://hu.tu/
+Documentation=https://www.v2fly.org/
 After=network.target nss-lookup.target
 
 [Service]
@@ -798,7 +902,7 @@ Type=simple
 User=root
 #User=nobody
 NoNewPrivileges=true
-ExecStart=/usr/bin/v2ray/v2ray -config /etc/v2ray/config.json
+ExecStart=/usr/bin/v2ray/v2ray $v2ray_start_config /etc/v2ray/config.json
 Restart=on-failure
 
 [Install]
@@ -853,16 +957,7 @@ trojanConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -913,16 +1008,7 @@ trojanXTLSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -952,16 +1038,7 @@ vmessConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1003,16 +1080,7 @@ vmessKCPConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1056,16 +1124,7 @@ vmessTLSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1105,16 +1164,7 @@ vmessWSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1167,16 +1217,7 @@ vlessTLSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1230,16 +1271,7 @@ vlessXTLSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1279,16 +1311,7 @@ vlessWSConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
@@ -1331,16 +1354,7 @@ vlessKCPConfig() {
     "protocol": "blackhole",
     "settings": {},
     "tag": "blocked"
-  }],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "blocked"
-      }
-    ]
-  }
+  }]
 }
 EOF
 }
