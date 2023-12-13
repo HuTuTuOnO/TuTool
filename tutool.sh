@@ -2,7 +2,6 @@
 ver="1.2.10"
 changeLog="添加了回程检测脚本，优化了部分脚本，修复了一些bug"
 arch=`uname -m`
-virt=`systemd-detect-virt`
 kernelVer=`uname -r`
 hostnameVariable=`hostname`
 
@@ -16,26 +15,66 @@ yellow(){
     echo -e "\033[33m\033[01m$1\033[0m"
 }
 
+virtualx=$(dmesg) 2>/dev/null
+
+if [[ $(which dmidecode) ]]; then
+sys_manu=$(dmidecode -s system-manufacturer) 2>/dev/null
+sys_product=$(dmidecode -s system-product-name) 2>/dev/null
+sys_ver=$(dmidecode -s system-version) 2>/dev/null
+else
+sys_manu=""
+sys_product=""
+sys_ver=""
+fi
+
+if grep docker /proc/1/cgroup -qa; then
+virt="Docker"
+elif grep lxc /proc/1/cgroup -qa; then
+virt="Lxc"
+elif grep -qa container=lxc /proc/1/environ; then
+virt="Lxc"
+elif [[ -f /proc/user_beancounters ]]; then
+virt="OpenVZ"
+elif [[ "$virtualx" == *kvm-clock* ]]; then
+virt="KVM"
+elif [[ "$cname" == *KVM* ]]; then
+virt="KVM"
+elif [[ "$cname" == *QEMU* ]]; then
+virt="KVM"
+elif [[ "$virtualx" == *"VMware Virtual Platform"* ]]; then
+virt="VMware"
+elif [[ "$virtualx" == *"Parallels Software International"* ]]; then
+virt="Parallels"
+elif [[ "$virtualx" == *VirtualBox* ]]; then
+virt="VirtualBox"
+elif [[ -e /proc/xen ]]; then
+virt="Xen"
+elif [[ "$sys_manu" == *"Microsoft Corporation"* ]]; then
+if [[ "$sys_product" == *"Virtual Machine"* ]]; then
+    if [[ "$sys_ver" == *"7.0"* || "$sys_ver" == *"Hyper-V" ]]; then
+    virt="Hyper-V"
+    else
+    virt="Microsoft Virtual Machine"
+    fi
+fi
+else
+virt="Dedicated母鸡"
+fi
+
 
 if [[ -f /etc/redhat-release ]]; then
-    release="Centos"
-    elif cat /etc/issue | grep -q -E -i "debian"; then
-    release="Debian"
-    elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-    release="Ubuntu"
-    elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-    release="Centos"
-    elif cat /proc/version | grep -q -E -i "debian"; then
-    release="Debian"
-    elif cat /proc/version | grep -q -E -i "ubuntu"; then
-    release="Ubuntu"
-    elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-    release="Centos"
+    release=awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release
+elif [[ -f /etc/os-release ]]; then
+    release=awk -F'[= "]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release
+elif [[ -f /etc/lsb-releas ]]; then
+    release=awk -F'[="]+' '/DESCRIPTION/{print $2}' /etc/lsb-release
 else 
     red "不支持你当前系统，请使用Ubuntu,Debian,Centos系统"
     rm -f tutool.sh
     exit 1
 fi
+
+
 
 if ! type curl >/dev/null 2>&1; then 
 	yellow "检测到curl未安装，安装中 "
@@ -75,10 +114,6 @@ fi
 function Get_Ip_Address(){
 	getIpAddress=$(curl ip.p3terx.com)
 }
-
-
-
-
 
 # ==============part1=============
 
