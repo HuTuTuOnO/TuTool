@@ -18,11 +18,19 @@ yellow(){
 
 
 if [[ -f /etc/redhat-release ]]; then
-    release=awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release
-elif [[ -f /etc/os-release ]]; then
-    release=awk -F'[= "]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release
-elif [[ -f /etc/lsb-releas ]]; then
-    release=awk -F'[="]+' '/DESCRIPTION/{print $2}' /etc/lsb-release
+    release="Centos"
+    elif cat /etc/issue | grep -q -E -i "debian"; then
+    release="Debian"
+    elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+    release="Ubuntu"
+    elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+    release="Centos"
+    elif cat /proc/version | grep -q -E -i "debian"; then
+    release="Debian"
+    elif cat /proc/version | grep -q -E -i "ubuntu"; then
+    release="Ubuntu"
+    elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+    release="Centos"
 else 
     red "不支持你当前系统，请使用Ubuntu,Debian,Centos系统"
     rm -f tutool.sh
@@ -67,7 +75,6 @@ fi
 function Get_Ip_Address(){
 	getIpAddress=$(curl ip.p3terx.com)
 }
-
 
 
 
